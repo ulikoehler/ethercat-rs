@@ -10,7 +10,6 @@ use std::{
     convert::TryFrom,
     ffi::CStr,
     fs::{File, OpenOptions},
-    fmt,
     io,
     os::{raw::c_ulong, unix::io::AsRawFd},
 };
@@ -77,6 +76,14 @@ impl Master {
             ));
         }
         Ok(master)
+    }
+
+    /// Return the raw file descriptor for the master's device file.
+    ///
+    /// This is used by lower-level helpers (for example request objects)
+    /// that need to call ioctl functions directly.
+    pub(crate) fn fd(&self) -> i32 {
+        self.file.as_raw_fd()
     }
 
     /// Determine how many EtherCAT masters are available in the system.
@@ -1002,12 +1009,8 @@ impl<'m> SlaveConfig<'m> {
     /// Returns
     /// * `Ok(SdoRequest<'m>)` on success with a handle to the created request.
     /// * `Err(...)` on failure (propagates IO and kernel errors).
-    pub fn create_sdo_request(
-        &mut self,
-        index: SdoIdx,
-        size: usize,
-    ) -> Result<SdoRequest<'m>> {
-    let mut data = ec::ec_ioctl_sdo_request_t::default();
+    pub fn create_sdo_request(&mut self, index: SdoIdx, size: usize) -> Result<crate::SdoRequest<'m>> {
+        let mut data = ec::ec_ioctl_sdo_request_t::default();
         data.config_index = self.idx;
         data.sdo_index = u16::from(index.idx);
         data.sdo_subindex = u8::from(index.sub_idx);
@@ -1015,100 +1018,16 @@ impl<'m> SlaveConfig<'m> {
 
         ioctl!(self.master, ec::ioctl::SC_SDO_REQUEST, &mut data)?;
 
-        Ok(SdoRequest {
-            master: self.master,
-            config_index: self.idx,
-            request_index: data.request_index,
-            sdo_index: index,
-            buffer: vec![0u8; data.size],
-            data_size: data.size,
-        })
+        Ok(crate::SdoRequest::new(
+            self.master,
+            self.idx,
+            data.request_index,
+            index,
+            data.size,
+        ))
     }
 
     // XXX missing: create_reg_request, create_voe_handler
-}
-
-pub struct SdoRequest<'m> {
-    #[allow(dead_code)]
-    master: &'m Master,
-    config_index: SlaveConfigIdx,
-    request_index: u32,
-    sdo_index: SdoIdx,
-    buffer: Vec<u8>,
-    data_size: usize,
-}
-
-impl<'m> SdoRequest<'m> {
-    pub fn index(&self) -> SdoIdx {
-        self.sdo_index
-    }
-
-    /// Return the SDO index/subindex associated with this request.
-    ///
-    /// The returned `SdoIdx` identifies the object dictionary index and
-    /// subindex that this request is configured to access.
-    pub fn request_index(&self) -> u32 {
-        self.request_index
-    }
-
-    /// Return a read-only view of the currently valid data for this request.
-    /// 
-    /// This is the equivalent of calling `ecrt_sdo_request_data()` in the C API
-    /// (read-only version).
-    ///
-    /// The slice length equals the logical data size previously set for the
-    /// request (see `set_data_size`). The returned memory is owned by the
-    /// `SdoRequest` handle.
-    pub fn data(&self) -> &[u8] {
-        &self.buffer[..self.data_size]
-    }
-
-    /// Return a mutable view of the currently valid data buffer.
-    /// 
-    /// This is the equivalent of calling `ecrt_sdo_request_data()` in the C API
-    /// (mutable version).
-    ///
-    /// Use this to fill data before issuing a write or to modify contents
-    /// after a read. The slice length equals the logical data size.
-    pub fn data_mut(&mut self) -> &mut [u8] {
-        &mut self.buffer[..self.data_size]
-    }
-
-    /// Return the total capacity of the internally allocated buffer.
-    /// 
-    /// This is the equivalent of calling `ecrt_sdo_request_data_size()`
-    /// in the C API.
-    ///
-    /// This is the number of bytes that can be stored without reallocating
-    /// the request's buffer.
-    pub fn data_size(&self) -> usize {
-        self.buffer.len()
-    }
-
-    /// Set the logical size of the request data.
-    ///
-    /// The `len` must not exceed the buffer capacity returned by
-    /// `data_size()`. If `len` is larger, this returns
-    /// `Err(Error::RequestFailed)`.
-    pub fn set_data_size(&mut self, len: usize) -> Result<()> {
-        if len > self.buffer.len() {
-            return Err(Error::RequestFailed);
-        }
-        self.data_size = len;
-        Ok(())
-    }
-}
-
-impl fmt::Debug for SdoRequest<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SdoRequest")
-            .field("config_index", &self.config_index)
-            .field("request_index", &self.request_index)
-            .field("sdo_index", &self.sdo_index)
-            .field("data_size", &self.data_size)
-            .field("buffer_len", &self.buffer.len())
-            .finish()
-    }
 }
 
 impl<'m> Domain<'m> {

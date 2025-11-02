@@ -6,8 +6,11 @@ use ethercat_sys as ec;
 mod convert;
 mod master;
 mod types;
+mod sdo_request;
 
 pub use self::{
     master::{Domain, Master, MasterAccess, SlaveConfig},
     types::*,
 };
+
+pub use self::sdo_request::SdoRequest;
