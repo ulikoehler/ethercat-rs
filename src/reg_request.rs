@@ -2,7 +2,7 @@
 // This work is dual-licensed under Apache 2.0 and MIT terms.
 
 use crate::{ec, types::*};
-use std::{fmt, io, os::fd::RawFd};
+use std::{convert::TryInto, fmt, io, os::fd::RawFd};
 
 /// A handle for a kernel-side register request.
 ///
@@ -19,6 +19,81 @@ pub struct RegisterRequest {
 }
 
 impl RegisterRequest {
+    fn ensure_not_busy(&mut self, operation: &'static str) -> Result<()> {
+        if self.state()? == ec::EC_REQUEST_BUSY {
+            return Err(Error::RequestBusy { operation });
+        }
+        Ok(())
+    }
+
+    fn ensure_has_bytes(&self, operation: &'static str, needed: usize) -> Result<()> {
+        let offset = 0;
+        let available = self.buffer.len();
+        if needed > available {
+            return Err(Error::InsufficientData {
+                operation,
+                offset,
+                needed,
+                available,
+            });
+        }
+        Ok(())
+    }
+
+    /// Read a little-endian `u16` from the request buffer.
+    pub fn get_u16(&self) -> Result<u16> {
+        self.ensure_has_bytes("RegisterRequest::get_u16", 2)?;
+        let bytes: [u8; 2] = self.buffer[0..2].try_into().expect("checked");
+        Ok(u16::from_le_bytes(bytes))
+    }
+
+    /// Read a little-endian `i16` from the request buffer.
+    pub fn get_i16(&self) -> Result<i16> {
+        self.ensure_has_bytes("RegisterRequest::get_i16", 2)?;
+        let bytes: [u8; 2] = self.buffer[0..2].try_into().expect("checked");
+        Ok(i16::from_le_bytes(bytes))
+    }
+
+    /// Read a little-endian `u32` from the request buffer.
+    pub fn get_u32(&self) -> Result<u32> {
+        self.ensure_has_bytes("RegisterRequest::get_u32", 4)?;
+        let bytes: [u8; 4] = self.buffer[0..4].try_into().expect("checked");
+        Ok(u32::from_le_bytes(bytes))
+    }
+
+    /// Read a little-endian `i32` from the request buffer.
+    pub fn get_i32(&self) -> Result<i32> {
+        self.ensure_has_bytes("RegisterRequest::get_i32", 4)?;
+        let bytes: [u8; 4] = self.buffer[0..4].try_into().expect("checked");
+        Ok(i32::from_le_bytes(bytes))
+    }
+
+    /// Read a `u8` from the request buffer.
+    pub fn get_u8(&self) -> Result<u8> {
+        self.ensure_has_bytes("RegisterRequest::get_u8", 1)?;
+        Ok(self.buffer[0])
+    }
+
+    /// Read an `i8` from the request buffer.
+    pub fn get_i8(&self) -> Result<i8> {
+        self.ensure_has_bytes("RegisterRequest::get_i8", 1)?;
+        Ok(self.buffer[0] as i8)
+    }
+
+    /// Read a little-endian `u64` from the request buffer.
+    pub fn get_u64(&self) -> Result<u64> {
+        self.ensure_has_bytes("RegisterRequest::get_u64", 8)?;
+        let bytes: [u8; 8] = self.buffer[0..8].try_into().expect("checked");
+        Ok(u64::from_le_bytes(bytes))
+    }
+
+    /// Read a little-endian `i64` from the request buffer.
+    pub fn get_i64(&self) -> Result<i64> {
+        self.ensure_has_bytes("RegisterRequest::get_i64", 8)?;
+        let bytes: [u8; 8] = self.buffer[0..8].try_into().expect("checked");
+        Ok(i64::from_le_bytes(bytes))
+    }
+
     /// Construct a new `RegisterRequest` handle.
     ///
     /// Intended to be called from `SlaveConfig::create_reg_request` after the
@@ -98,6 +173,8 @@ impl RegisterRequest {
     ///
     /// `size` is limited to the buffer size chosen at request creation.
     pub fn read(&mut self, address: u16, size: usize) -> Result<()> {
+        self.ensure_not_busy("RegisterRequest::read")?;
+
         let mut data = ec::ec_ioctl_reg_request_t::default();
         data.config_index = self.config_index;
         data.request_index = self.request_index;
@@ -117,6 +194,8 @@ impl RegisterRequest {
     /// writes them to `address`. `size` is limited to the buffer size chosen at
     /// request creation.
     pub fn write(&mut self, address: u16, size: usize) -> Result<()> {
+        self.ensure_not_busy("RegisterRequest::write")?;
+
         let mut data = ec::ec_ioctl_reg_request_t::default();
         data.config_index = self.config_index;
         data.request_index = self.request_index;

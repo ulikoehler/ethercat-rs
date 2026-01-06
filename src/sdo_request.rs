@@ -1,6 +1,6 @@
 // SDO request wrapper extracted from `master.rs`.
 use crate::{ec, types::*};
-use std::{fmt, io, os::fd::RawFd};
+use std::{convert::TryInto, fmt, io, os::fd::RawFd};
 
 /// A handle for a kernel-side SDO request.
 pub struct SdoRequest {
@@ -13,6 +13,81 @@ pub struct SdoRequest {
 }
 
 impl SdoRequest {
+    fn ensure_not_busy(&mut self, operation: &'static str) -> Result<()> {
+        if self.state()? == ec::EC_REQUEST_BUSY {
+            return Err(Error::RequestBusy { operation });
+        }
+        Ok(())
+    }
+
+    fn ensure_has_bytes(&self, operation: &'static str, needed: usize) -> Result<()> {
+        let offset = 0;
+        let available = self.data().len();
+        if needed > available {
+            return Err(Error::InsufficientData {
+                operation,
+                offset,
+                needed,
+                available,
+            });
+        }
+        Ok(())
+    }
+
+    /// Read a little-endian `u16` from the request data.
+    pub fn get_u16(&self) -> Result<u16> {
+        self.ensure_has_bytes("SdoRequest::get_u16", 2)?;
+        let bytes: [u8; 2] = self.data()[0..2].try_into().expect("checked");
+        Ok(u16::from_le_bytes(bytes))
+    }
+
+    /// Read a little-endian `i16` from the request data.
+    pub fn get_i16(&self) -> Result<i16> {
+        self.ensure_has_bytes("SdoRequest::get_i16", 2)?;
+        let bytes: [u8; 2] = self.data()[0..2].try_into().expect("checked");
+        Ok(i16::from_le_bytes(bytes))
+    }
+
+    /// Read a little-endian `u32` from the request data.
+    pub fn get_u32(&self) -> Result<u32> {
+        self.ensure_has_bytes("SdoRequest::get_u32", 4)?;
+        let bytes: [u8; 4] = self.data()[0..4].try_into().expect("checked");
+        Ok(u32::from_le_bytes(bytes))
+    }
+
+    /// Read a little-endian `i32` from the request data.
+    pub fn get_i32(&self) -> Result<i32> {
+        self.ensure_has_bytes("SdoRequest::get_i32", 4)?;
+        let bytes: [u8; 4] = self.data()[0..4].try_into().expect("checked");
+        Ok(i32::from_le_bytes(bytes))
+    }
+
+    /// Read a `u8` from the request data.
+    pub fn get_u8(&self) -> Result<u8> {
+        self.ensure_has_bytes("SdoRequest::get_u8", 1)?;
+        Ok(self.data()[0])
+    }
+
+    /// Read an `i8` from the request data.
+    pub fn get_i8(&self) -> Result<i8> {
+        self.ensure_has_bytes("SdoRequest::get_i8", 1)?;
+        Ok(self.data()[0] as i8)
+    }
+
+    /// Read a little-endian `u64` from the request data.
+    pub fn get_u64(&self) -> Result<u64> {
+        self.ensure_has_bytes("SdoRequest::get_u64", 8)?;
+        let bytes: [u8; 8] = self.data()[0..8].try_into().expect("checked");
+        Ok(u64::from_le_bytes(bytes))
+    }
+
+    /// Read a little-endian `i64` from the request data.
+    pub fn get_i64(&self) -> Result<i64> {
+        self.ensure_has_bytes("SdoRequest::get_i64", 8)?;
+        let bytes: [u8; 8] = self.data()[0..8].try_into().expect("checked");
+        Ok(i64::from_le_bytes(bytes))
+    }
+
     /// Construct a new `SdoRequest` handle. Intended to be called from
     /// `SlaveConfig::create_sdo_request` after the kernel request has been
     /// created and returned a `request_index` and buffer size.
@@ -109,6 +184,8 @@ impl SdoRequest {
     }
 
     /// Query the kernel for the current state of this SDO request.
+    /// 
+    /// This function maps to `ecrt_sdo_request_state()` in the C API.
     ///
     /// If new data is available, the kernel will provide the data size via
     /// `SDO_REQUEST_STATE`. In that case this method reads the data via
@@ -149,6 +226,8 @@ impl SdoRequest {
     ///
     /// This maps to `ecrt_sdo_request_read()` in the C API.
     pub fn read(&mut self) -> Result<()> {
+        self.ensure_not_busy("SdoRequest::read")?;
+
         let mut data = ec::ec_ioctl_sdo_request_t::default();
         data.config_index = self.config_index;
         data.request_index = self.request_index;
@@ -165,6 +244,8 @@ impl SdoRequest {
     ///
     /// This maps to `ecrt_sdo_request_write()` in the C API.
     pub fn write(&mut self) -> Result<()> {
+        self.ensure_not_busy("SdoRequest::write")?;
+
         let mut data = ec::ec_ioctl_sdo_request_t::default();
         data.config_index = self.config_index;
         data.request_index = self.request_index;

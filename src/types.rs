@@ -24,6 +24,15 @@ pub enum Error {
     InvalidAlState(u8),
     #[error("SDO/VoE/register request failed")]
     RequestFailed,
+    #[error("Cannot call {operation} while request state is EC_REQUEST_BUSY; poll state() until it is no longer busy")]
+    RequestBusy { operation: &'static str },
+    #[error("Cannot {operation}: need {needed} bytes at offset {offset}, but only {available} bytes are available")]
+    InsufficientData {
+        operation: &'static str,
+        offset: usize,
+        needed: usize,
+        available: usize,
+    },
     #[error(transparent)]
     Io(#[from] io::Error),
 }
