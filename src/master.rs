@@ -1009,7 +1009,7 @@ impl<'m> SlaveConfig<'m> {
     /// Returns
     /// * `Ok(SdoRequest<'m>)` on success with a handle to the created request.
     /// * `Err(...)` on failure (propagates IO and kernel errors).
-    pub fn create_sdo_request(&mut self, index: SdoIdx, size: usize) -> Result<crate::SdoRequest<'m>> {
+    pub fn create_sdo_request(&mut self, index: SdoIdx, size: usize) -> Result<crate::SdoRequest> {
         let mut data = ec::ec_ioctl_sdo_request_t::default();
         data.config_index = self.idx;
         data.sdo_index = u16::from(index.idx);
@@ -1019,7 +1019,7 @@ impl<'m> SlaveConfig<'m> {
         ioctl!(self.master, ec::ioctl::SC_SDO_REQUEST, &mut data)?;
 
         Ok(crate::SdoRequest::new(
-            self.master,
+            self.master.fd(),
             self.idx,
             data.request_index,
             index,
@@ -1027,7 +1027,43 @@ impl<'m> SlaveConfig<'m> {
         ))
     }
 
-    // XXX missing: create_reg_request, create_voe_handler
+    /// Create a new register request for this slave configuration.
+    ///
+    /// A register request lets you exchange raw EtherCAT register contents with
+    /// a slave while the master is running. The returned `RegisterRequest`
+    /// owns a fixed-size buffer that is used for both read results and write
+    /// payloads.
+    ///
+    /// This request must be created in a non-realtime context before
+    /// activating the master.
+    ///
+    /// This is the Rust equivalent of the C API function
+    /// `ecrt_slave_config_create_reg_request()`.
+    ///
+    /// # Arguments
+    /// * `size` - Size in bytes of the internal buffer reserved for this
+    ///   request.
+    ///
+    /// # Returns
+    /// * `Ok(RegisterRequest<'m>)` on success with a handle to the created
+    ///   request.
+    /// * `Err(...)` on failure (propagates IO and kernel errors).
+    pub fn create_reg_request(&mut self, size: usize) -> Result<crate::RegisterRequest> {
+        let mut data = ec::ec_ioctl_reg_request_t::default();
+        data.config_index = self.idx;
+        data.mem_size = size;
+
+        ioctl!(self.master, ec::ioctl::SC_REG_REQUEST, &mut data)?;
+
+        Ok(crate::RegisterRequest::new(
+            self.master.fd(),
+            self.idx,
+            data.request_index,
+            size,
+        ))
+    }
+
+    // XXX missing: create_voe_handler
 }
 
 impl<'m> Domain<'m> {

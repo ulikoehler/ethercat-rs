@@ -7,6 +7,7 @@ mod convert;
 mod master;
 mod types;
 mod sdo_request;
+mod reg_request;
 
 pub use self::{
     master::{Domain, Master, MasterAccess, SlaveConfig},
@@ -14,3 +15,4 @@ pub use self::{
 };
 
 pub use self::sdo_request::SdoRequest;
+pub use self::reg_request::RegisterRequest;

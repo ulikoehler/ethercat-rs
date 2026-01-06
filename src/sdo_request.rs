@@ -1,10 +1,10 @@
 // SDO request wrapper extracted from `master.rs`.
-use crate::{ec, types::*, Master};
-use std::{fmt, io};
+use crate::{ec, types::*};
+use std::{fmt, io, os::fd::RawFd};
 
 /// A handle for a kernel-side SDO request.
-pub struct SdoRequest<'m> {
-    master: &'m Master,
+pub struct SdoRequest {
+    fd: RawFd,
     config_index: SlaveConfigIdx,
     request_index: u32,
     sdo_index: SdoIdx,
@@ -12,19 +12,19 @@ pub struct SdoRequest<'m> {
     data_size: usize,
 }
 
-impl<'m> SdoRequest<'m> {
+impl SdoRequest {
     /// Construct a new `SdoRequest` handle. Intended to be called from
     /// `SlaveConfig::create_sdo_request` after the kernel request has been
     /// created and returned a `request_index` and buffer size.
     pub(crate) fn new(
-        master: &'m Master,
+        fd: RawFd,
         config_index: SlaveConfigIdx,
         request_index: u32,
         sdo_index: SdoIdx,
         size: usize,
     ) -> Self {
         Self {
-            master,
+            fd,
             config_index,
             request_index,
             sdo_index,
@@ -48,7 +48,7 @@ impl<'m> SdoRequest<'m> {
         data.sdo_index = u16::from(index.idx);
         data.sdo_subindex = u8::from(index.sub_idx);
 
-        let res = unsafe { ec::ioctl::SDO_REQUEST_INDEX(self.master.fd(), &mut data) };
+        let res = unsafe { ec::ioctl::SDO_REQUEST_INDEX(self.fd, &mut data) };
         if res < 0 {
             return Err(Error::Io(io::Error::last_os_error()));
         }
@@ -101,7 +101,7 @@ impl<'m> SdoRequest<'m> {
         data.request_index = self.request_index;
         data.timeout = timeout_us;
 
-        let res = unsafe { ec::ioctl::SDO_REQUEST_TIMEOUT(self.master.fd(), &mut data) };
+        let res = unsafe { ec::ioctl::SDO_REQUEST_TIMEOUT(self.fd, &mut data) };
         if res < 0 {
             return Err(Error::Io(io::Error::last_os_error()));
         }
@@ -119,7 +119,7 @@ impl<'m> SdoRequest<'m> {
         data.config_index = self.config_index;
         data.request_index = self.request_index;
 
-        let res = unsafe { ec::ioctl::SDO_REQUEST_STATE(self.master.fd(), &mut data) };
+        let res = unsafe { ec::ioctl::SDO_REQUEST_STATE(self.fd, &mut data) };
         if res < 0 {
             return Err(Error::Io(io::Error::last_os_error()));
         }
@@ -135,7 +135,7 @@ impl<'m> SdoRequest<'m> {
             }
 
             data.data = self.buffer.as_mut_ptr();
-            let res = unsafe { ec::ioctl::SDO_REQUEST_DATA(self.master.fd(), &mut data) };
+            let res = unsafe { ec::ioctl::SDO_REQUEST_DATA(self.fd, &mut data) };
             if res < 0 {
                 return Err(Error::Io(io::Error::last_os_error()));
             }
@@ -153,7 +153,7 @@ impl<'m> SdoRequest<'m> {
         data.config_index = self.config_index;
         data.request_index = self.request_index;
 
-        let res = unsafe { ec::ioctl::SDO_REQUEST_READ(self.master.fd(), &mut data) };
+        let res = unsafe { ec::ioctl::SDO_REQUEST_READ(self.fd, &mut data) };
         if res < 0 {
             return Err(Error::Io(io::Error::last_os_error()));
         }
@@ -171,7 +171,7 @@ impl<'m> SdoRequest<'m> {
         data.data = self.buffer.as_mut_ptr();
         data.size = self.data_size;
 
-        let res = unsafe { ec::ioctl::SDO_REQUEST_WRITE(self.master.fd(), &mut data) };
+        let res = unsafe { ec::ioctl::SDO_REQUEST_WRITE(self.fd, &mut data) };
         if res < 0 {
             return Err(Error::Io(io::Error::last_os_error()));
         }
@@ -179,7 +179,7 @@ impl<'m> SdoRequest<'m> {
     }
 }
 
-impl fmt::Debug for SdoRequest<'_> {
+impl fmt::Debug for SdoRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SdoRequest")
             .field("config_index", &self.config_index)
